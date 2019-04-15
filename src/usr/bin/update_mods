@@ -1,0 +1,89 @@
+#!/bin/bash
+
+source /var/lib/conanexiles/notifier.sh
+
+APPID=440900
+INSTALL_DIR=/conanexiles
+WORKSHOP_PATH=${INSTALL_DIR}/steamapps/workshop/content
+MOD_PATH=${INSTALL_DIR}/ConanSandbox/Mods
+MOD_LIST_PATH=${INSTALL_DIR}/mods/mod_list.txt
+
+function download_mod() {
+    if [[ -z $1 ]]; then
+        notifier_error "Mod ID was not defined, please provide a mod ID"
+        exit 1
+    elif [[ -z `expr "${1}" : '\([0-9]*\)'` ]]; then
+        notifier_error "Input does not seem to be a Mod ID, try something like this: 1113901982"
+        exit 1
+    fi
+
+    notifier_info "Downloading Mod ${1}"
+
+    result=$(bash /steamcmd/steamcmd.sh +login anonymous +force_install_dir ${INSTALL_DIR} +workshop_download_item ${APPID} ${1} +quit)
+    # maybe log output to somewhere?
+    echo ${result}
+
+    notifier_info "Downloaded Mod ${1}"
+}
+
+function write_modlist() {
+    _installed_mods_list="${MOD_PATH}/modlist.txt"
+
+    if [[ ! -f ${_installed_mods_list} ]]; then
+        notifier_info "Rewriting installed mods list"
+        echo > ${_installed_mods_list}
+        while read line; do
+            mod_id=`expr "${line}" : '\([0-9]*\)'`
+            if [[ ! -z ${mod_id} ]]; then
+                filename=`basename $(ls ${WORKSHOP_PATH}/${APPID}/${mod_id}/*.pak)`
+                echo "*${filename}" >> ${_installed_mods_list}
+            fi
+        done < ${MOD_LIST_PATH}
+    fi
+}
+
+function move_mod() {
+    if [[ -z $1 ]]; then
+        notifier_error "Mod ID was not defined, please provide a mod ID"
+        exit 1
+    elif [[ -z `expr "${1}" : '\([0-9]*\)'` ]]; then
+        notifier_error "Input does not seem to be a Mod ID, try something like this: 1113901982"
+        exit 1
+    fi
+
+    notifier_info "Moving Mod ${1} to game installation directory"
+
+    bytes=`rsync -avr --stats ${WORKSHOP_PATH}/${APPID}/${1}/ ${MOD_PATH} | grep "Total transferred file size:" | sed 's/Total transferred file size: \(.*\) bytes/\1/'`
+
+    if [[ ${bytes} != "0" ]];then
+        notifier_info "Mod ${1} has been updated: $bytes bytes"
+    else
+        notifier_info "No need to update mod ${1}, installed version is the same as the new version"
+    fi
+}
+
+function install_mod() {
+    if [[ -z $1 ]]; then
+        notifier_error "Mod ID was not defined, please provide a mod ID"
+        exit 1
+    elif [[ -z `expr "${1}" : '\([0-9]*\)'` ]]; then
+        notifier_error "Input does not seem to be a Mod ID, try something like this: 1113901982"
+        exit 1
+    fi
+
+    download_mod $1
+    move_mod $1
+}
+
+function reinstall_all_mods() {
+    while read line; do
+        mod_id=`expr "${line}" : '\([0-9]*\)'`
+        if [[ ! -z ${mod_id} ]]; then
+            download_mod ${mod_id}
+            move_mod ${mod_id}
+        fi
+
+    done < ${MOD_LIST_PATH}
+
+    write_modlist
+}
